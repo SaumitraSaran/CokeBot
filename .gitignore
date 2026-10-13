@@ -1,0 +1,38 @@
+# Environment files and secrets
+.env
+.env.*
+!.env.example
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# Local databases and generated files
+*.sqlite
+*.sqlite3
+
+# IDE and editor settings
+.vscode/
+.idea/
+
+# Temporary and spreadsheet lock files
+~$*
+
+# Local data backups
+backups/
