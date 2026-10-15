@@ -18,15 +18,66 @@
   const welcomeChips  = document.getElementById("welcomeChips");
   const commandCards  = document.getElementById("commandCards");
   const freshnessLabel = document.getElementById("freshnessLabel");
+  const demoBadge     = document.getElementById("demoBadge");
+  const REPOSITORY_URL = "https://github.com/SaumitraSaran/CokeBot";
+  const DEMO_FALLBACK_MESSAGE = `This is a demo of the official Cokebot. To run it fully, kindly check the GitHub repository: ${REPOSITORY_URL}`;
 
   let isProcessing = false;
+  const queryParams = new URLSearchParams(window.location.search);
+  const isLocalHost = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+  // Static hosts have no Flask API. Use ?demo=0 to force the live API on a custom host.
+  const DEMO_MODE = queryParams.get("demo") === "1"
+    || (queryParams.get("demo") !== "0" && (window.location.protocol === "file:" || !isLocalHost));
   // Only short, user-visible conversation context is sent for follow-up questions.
   const conversation = [];
+
+  const DEMO_FIXTURES = {
+    freshness: "Demo dataset · refreshed 15 Oct 2026",
+    cards: {
+      latest_amount: { columns: ["trans_date", "value"], rows: [["2026-10-15", 184250.75]] },
+      yesterday_amount: { columns: ["trans_date", "value"], rows: [["2026-10-14", 169840.20]] },
+      active_customers: { columns: ["active_customers"], rows: [[1284]] },
+      largest_customer: { columns: ["customer_name", "value"], rows: [["Metro Retail Group", 42680.50]] },
+    },
+    monthly: {
+      columns: ["month", "transaction_count", "reporting_amount"],
+      rows: [
+        ["May 2026", 1842, 142380.00], ["Jun 2026", 1926, 151240.50],
+        ["Jul 2026", 2058, 158920.25], ["Aug 2026", 2184, 166410.75],
+        ["Sep 2026", 2310, 174680.00], ["Oct 2026", 2498, 184250.75],
+      ],
+    },
+    customers: {
+      columns: ["customer_name", "transaction_count", "reporting_amount"],
+      rows: [
+        ["Metro Retail Group", 184, 42680.50], ["FreshMart Stores", 156, 38120.25],
+        ["QuickServe Foods", 141, 33490.00], ["Northstar Wholesale", 119, 28940.75],
+        ["City Market Co.", 108, 24760.50],
+      ],
+    },
+    daily: {
+      columns: ["trans_date", "transaction_count", "reporting_amount"],
+      rows: [["2026-10-15", 2498, 184250.75]],
+    },
+    drivers: {
+      columns: ["payment_mode", "current_period", "prior_period", "change_amount"],
+      rows: [
+        ["Card", 112840.50, 98420.25, 14420.25], ["Bank transfer", 42680.00, 38910.50, 3769.50],
+        ["Cash", 18730.25, 22410.00, -3679.75],
+      ],
+    },
+  };
+
+  if (DEMO_MODE) {
+    demoBadge.hidden = false;
+    statusLabel.textContent = "Demo mode";
+  }
 
   loadCommandCenter();
 
   async function loadCommandCenter() {
     try {
+      if (DEMO_MODE) throw new Error("Static demo mode");
       const response = await fetch("/api/command-center");
       const payload = await response.json();
       if (!response.ok) throw new Error("Command center unavailable");
@@ -38,18 +89,114 @@
         ["Top customer", payload.cards.largest_customer],
       ];
       cards.forEach(([label, result]) => {
-        const row = result?.rows?.[0] || [];
-        const card = document.createElement("button");
-        card.className = "command-card";
-        card.innerHTML = `<span>${label}</span><strong></strong><small></small>`;
-        card.querySelector("strong").textContent = row[1] ?? row[0] ?? "—";
-        card.querySelector("small").textContent = row[0] && row[1] ? row[0] : "Verified data";
-        card.addEventListener("click", () => sendQuestion(label === "Top customer" ? "Show top 10 customers this month" : `Explain ${label.toLowerCase()}`));
-        commandCards.appendChild(card);
+        renderCommandCard(label, result, false);
       });
     } catch (_) {
-      freshnessLabel.textContent = "Metrics load when the data service is online";
+      const payload = DEMO_FIXTURES;
+      freshnessLabel.textContent = payload.freshness;
+      [
+        ["Latest revenue", payload.cards.latest_amount],
+        ["Prior-day revenue", payload.cards.yesterday_amount],
+        ["Active customers", payload.cards.active_customers],
+        ["Top customer", payload.cards.largest_customer],
+      ].forEach(([label, result]) => renderCommandCard(label, result, true));
     }
+  }
+
+  function renderCommandCard(label, result, demo) {
+    const row = result?.rows?.[0] || [];
+    const card = document.createElement("button");
+    card.className = "command-card";
+    card.innerHTML = `<span>${label}</span><strong></strong><small></small>`;
+    card.querySelector("strong").textContent = typeof row[1] === "number"
+      ? row[1].toLocaleString(undefined, { maximumFractionDigits: 2 })
+      : row[1] ?? row[0] ?? "—";
+    card.querySelector("small").textContent = demo ? "Sample data" : (row[0] && row[1] ? row[0] : "Verified data");
+    card.addEventListener("click", () => sendQuestion(
+      label === "Top customer" ? "Show the top 5 customers by transaction value" : `Explain ${label.toLowerCase()}`
+    ));
+    commandCards.appendChild(card);
+  }
+
+  function getDemoResponse(question) {
+    const normalized = question.toLowerCase();
+    const supportedDemoQuestion = [
+      "top", "customer", "today", "count", "why", "driver", "changed",
+      "total", "revenue", "amount", "trend", "month", "payment",
+    ].some(term => normalized.includes(term));
+
+    if (!supportedDemoQuestion) {
+      return {
+        answer: DEMO_FALLBACK_MESSAGE,
+        sql: null,
+        data: null,
+        demoUnavailable: true,
+        meta: { source: "frontend demo" },
+      };
+    }
+
+    let data = DEMO_FIXTURES.monthly;
+    let queryType = "trend";
+    let answer = "Revenue has increased steadily across the last six months, with October currently leading.";
+    let intent = "monthly_transaction_trend";
+    let sql = "SELECT DATE_FORMAT(trans_date, '%Y-%m') AS month, COUNT(*) AS transaction_count, SUM(reporting_currency_amount) AS reporting_amount\nFROM customer_transactions\nWHERE trans_date >= DATE_SUB((SELECT MAX(trans_date) FROM customer_transactions), INTERVAL 5 MONTH)\nGROUP BY DATE_FORMAT(trans_date, '%Y-%m')\nORDER BY month;";
+    let headline = "Revenue is up 29.4% versus May 2026.";
+    let logic = "Groups transactions by month and compares the reporting amount across the requested six-month window.";
+    let filters = ["last 6 available months", "grouped by transaction month"];
+
+    if (normalized.includes("top") || normalized.includes("customer")) {
+      data = DEMO_FIXTURES.customers;
+      queryType = "ranking";
+      intent = "top_customer_transactions";
+      answer = "Metro Retail Group leads the demo period with $42,680.50 in transaction value.";
+      sql = "SELECT customer_name, COUNT(*) AS transaction_count, SUM(reporting_currency_amount) AS reporting_amount\nFROM customer_transactions\nWHERE trans_date >= DATE_FORMAT((SELECT MAX(trans_date) FROM customer_transactions), '%Y-%m-01')\nGROUP BY customer_name\nORDER BY reporting_amount DESC\nLIMIT 5;";
+      headline = "The top five customers contribute $168,000.00 this month.";
+      logic = "Aggregates reporting amount by customer for the latest available month, then sorts descending and keeps the top five.";
+      filters = ["latest available month", "top 5 by reporting amount"];
+    } else if (normalized.includes("today") || normalized.includes("count")) {
+      data = DEMO_FIXTURES.daily;
+      queryType = "comparison";
+      intent = "daily_transaction_count";
+      answer = "There are 2,498 transactions in the demo dataset for 15 October 2026.";
+      sql = "SELECT trans_date, COUNT(*) AS transaction_count, SUM(reporting_currency_amount) AS reporting_amount\nFROM customer_transactions\nWHERE trans_date = (SELECT MAX(trans_date) FROM customer_transactions)\nGROUP BY trans_date;";
+      headline = "2,498 transactions were recorded on the latest available date.";
+      logic = "Filters to the latest transaction date and counts the matching records.";
+      filters = ["latest available transaction date"];
+    } else if (normalized.includes("why") || normalized.includes("driver") || normalized.includes("changed")) {
+      data = DEMO_FIXTURES.drivers;
+      queryType = "comparison";
+      intent = "payment_mode_change_drivers";
+      answer = "Card payments are the largest positive month-over-month driver, while cash payments declined.";
+      sql = "SELECT payment_mode,\n  SUM(CASE WHEN trans_date >= DATE_FORMAT((SELECT MAX(trans_date) FROM customer_transactions), '%Y-%m-01') THEN reporting_currency_amount ELSE 0 END) AS current_period,\n  SUM(CASE WHEN trans_date >= DATE_FORMAT((SELECT MAX(trans_date) FROM customer_transactions) - INTERVAL 1 MONTH, '%Y-%m-01')\n    AND trans_date < DATE_FORMAT((SELECT MAX(trans_date) FROM customer_transactions), '%Y-%m-01') THEN reporting_currency_amount ELSE 0 END) AS prior_period\nFROM customer_transactions\nGROUP BY payment_mode\nORDER BY ABS(current_period - prior_period) DESC;";
+      headline = "Card payments explain most of the month-over-month increase.";
+      logic = "Compares current and prior month reporting amounts by payment mode and ranks the absolute change.";
+      filters = ["current vs prior month", "grouped by payment mode"];
+    } else if (normalized.includes("total") || normalized.includes("revenue") || normalized.includes("amount")) {
+      data = { columns: ["period", "transaction_count", "reporting_amount"], rows: [["Latest day", 2498, 184250.75]] };
+      queryType = "breakdown";
+      intent = "latest_transaction_amount";
+      answer = "The latest available transaction date totals $184,250.75 across 2,498 transactions.";
+      sql = "SELECT MAX(trans_date) AS latest_date, COUNT(*) AS transaction_count, SUM(reporting_currency_amount) AS reporting_amount\nFROM customer_transactions\nWHERE trans_date = (SELECT MAX(trans_date) FROM customer_transactions);";
+      headline = "$184,250.75 in revenue was recorded on the latest available day.";
+      logic = "Finds the latest transaction date, then counts and sums all transactions from that date.";
+      filters = ["latest available transaction date"];
+    }
+
+    return {
+      answer: null, sql, data, intent, query_type: queryType,
+      insight: { headline, record_count: data.rows.length, chart_type: queryType === "trend" ? "line" : "bar" },
+      explanation: { logic, source: "Cokebot AI demo transaction dataset", filters, assumptions: ["Values are illustrative and do not represent live financial data."] },
+      trust: { score: 99, basis: "static demo fixture", freshness: DEMO_FIXTURES.freshness, records_returned: data.rows.length, truncated: false },
+      meta: { source: "frontend demo", latency_ms: 120, data_through_year: 2026 },
+      demoAnswer: answer,
+    };
+  }
+
+  function getDemoInvestigation() {
+    const response = getDemoResponse("why changed");
+    response.answer = "Largest month-over-month drivers by payment mode.";
+    response.demoAnswer = response.answer;
+    return response;
   }
 
   // ── Auto-resize textarea ──────────────────────────────────────────
@@ -104,19 +251,26 @@
     scrollToBottom();
 
     try {
-      const res = await fetch("/api/ask", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question, context: conversation.slice(-6, -1) }),
-      });
-
-      const data = await res.json();
+      let data;
+      if (DEMO_MODE) {
+        await new Promise(resolve => setTimeout(resolve, 350));
+        data = getDemoResponse(question);
+      } else {
+        const res = await fetch("/api/ask", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question, context: conversation.slice(-6, -1) }),
+        });
+        data = await res.json();
+      }
 
       // Remove thinking indicator
       thinkingEl.remove();
 
       if (data.error) {
         appendMessage("error", data.error);
+      } else if (data.demoUnavailable) {
+        appendDemoFallbackMessage();
       } else if (data.options && data.options.length > 0) {
         // Clarification flow
         appendMessage("ai", data.answer, null, data.options);
@@ -133,12 +287,18 @@
            scrollToBottom();
            
            try {
+           let answerData;
+           if (DEMO_MODE) {
+             await new Promise(resolve => setTimeout(resolve, 250));
+             answerData = { answer: data.demoAnswer || "This is a representative result from the static demo dataset." };
+           } else {
              const answerRes = await fetch("/api/answer", {
                method: "POST",
                headers: { "Content-Type": "application/json" },
                body: JSON.stringify({ question, data: data.data }),
              });
-             const answerData = await answerRes.json();
+             answerData = await answerRes.json();
+           }
              answerThinkingEl.remove();
              if (answerData.error) {
                const errorBubble = document.createElement("div");
@@ -179,18 +339,14 @@
                        Marked as correct. Thank you!
                      </span>
                    `;
-                   try {
-                     await fetch('/api/report', {
-                       method: 'POST',
-                       headers: { 'Content-Type': 'application/json' },
-                       body: JSON.stringify({
-                         question,
-                         intent: currentIntent,
-                         is_correct: true
-                       })
-                     });
-                   } catch (e) {
-                     console.error("Feedback error:", e);
+                   if (!DEMO_MODE) {
+                     try {
+                       await fetch('/api/report', {
+                         method: 'POST',
+                         headers: { 'Content-Type': 'application/json' },
+                         body: JSON.stringify({ question, intent: currentIntent, is_correct: true })
+                       });
+                     } catch (e) { console.error("Feedback error:", e); }
                    }
 
                  });
@@ -218,26 +374,21 @@
                          Report submitted. Thank you!
                        </span>
                      `;
-                     try {
-                       const reportRes = await fetch('/api/report', {
-                         method: 'POST',
-                         headers: { 'Content-Type': 'application/json' },
-                         body: JSON.stringify({
-                           question,
-                           intent: currentIntent,
-                           is_correct: false,
-                           feedback: feedbackText
-                         })
-                       });
-                       const repData = await reportRes.json();
-                       if (repData && repData.correction_triggered) {
-                         const notice = document.createElement("span");
-                         notice.className = "feedback-correction-notice";
-                         notice.textContent = "✨ Automatic correction applied to database query template based on user feedback.";
-                         feedbackContainer.appendChild(notice);
-                       }
-                     } catch (e) {
-                       console.error("Feedback error:", e);
+                     if (!DEMO_MODE) {
+                       try {
+                         const reportRes = await fetch('/api/report', {
+                           method: 'POST',
+                           headers: { 'Content-Type': 'application/json' },
+                           body: JSON.stringify({ question, intent: currentIntent, is_correct: false, feedback: feedbackText })
+                         });
+                         const repData = await reportRes.json();
+                         if (repData && repData.correction_triggered) {
+                           const notice = document.createElement("span");
+                           notice.className = "feedback-correction-notice";
+                           notice.textContent = "✨ Automatic correction applied to database query template based on user feedback.";
+                           feedbackContainer.appendChild(notice);
+                         }
+                       } catch (e) { console.error("Feedback error:", e); }
                      }
                    });
                  });
@@ -263,6 +414,25 @@
       questionInput.focus();
       scrollToBottom();
     }
+  }
+
+  function appendDemoFallbackMessage() {
+    const msg = document.createElement("div");
+    msg.className = "msg msg--ai";
+    msg.innerHTML = `
+      <div class="msg-avatar" aria-hidden="true">C</div>
+      <div class="msg-body">
+        <div class="msg-bubble">${DEMO_FALLBACK_MESSAGE}</div>
+        <a class="repository-link-btn" href="${REPOSITORY_URL}" target="_blank" rel="noopener noreferrer">
+          Open GitHub repository
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M7 17 17 7"></path><path d="M7 7h10v10"></path>
+          </svg>
+        </a>
+      </div>
+    `;
+    messagesEl.appendChild(msg);
+    scrollToBottom();
   }
 
   // ── Append a chat message ─────────────────────────────────────────
@@ -406,7 +576,7 @@
     actions.appendChild(exportBtn);
     const explainBtn = document.createElement("button");
     explainBtn.className = "result-action";
-    explainBtn.textContent = "How was this calculated?";
+    explainBtn.textContent = "Why this SQL query?";
     explainBtn.addEventListener("click", () => {
       const note = document.createElement("p");
       note.className = "calculation-note";
@@ -441,8 +611,14 @@
     investigate.addEventListener("click", async () => {
       investigate.disabled = true; investigate.textContent = "Investigating…";
       try {
-        const response = await fetch("/api/investigate", {method: "POST"});
-        const result = await response.json();
+        let result;
+        if (DEMO_MODE) {
+          await new Promise(resolve => setTimeout(resolve, 300));
+          result = getDemoInvestigation();
+        } else {
+          const response = await fetch("/api/investigate", {method: "POST"});
+          result = await response.json();
+        }
         appendMessage("ai", result.answer, null, null, result.data, result.insight, null, result.query_type, result.explanation, null, "Root-cause investigation");
       } finally { investigate.disabled = false; investigate.textContent = "Why changed?"; }
     });
@@ -453,8 +629,12 @@
     monitor.addEventListener("click", async () => {
       const threshold = window.prompt("Alert when reporting amount is greater than:");
       if (threshold === null || !Number.isFinite(Number(threshold))) return;
-      const response = await fetch("/api/monitors", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({name: question || "Saved insight", metric: "reporting_amount", operator: ">", threshold: Number(threshold)})});
-      monitor.textContent = response.ok ? "Monitor saved" : "Could not save";
+      if (DEMO_MODE) {
+        monitor.textContent = "Demo monitor saved";
+      } else {
+        const response = await fetch("/api/monitors", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({name: question || "Saved insight", metric: "reporting_amount", operator: ">", threshold: Number(threshold)})});
+        monitor.textContent = response.ok ? "Monitor saved" : "Could not save";
+      }
     });
     actions.appendChild(monitor);
     if (meta?.source) {
@@ -586,7 +766,7 @@
     } else {
       statusDot.style.background = "var(--success)";
       statusDot.style.boxShadow  = "0 0 6px var(--success)";
-      statusLabel.textContent    = "Online";
+      statusLabel.textContent    = DEMO_MODE ? "Demo mode" : "Online";
     }
   }
 

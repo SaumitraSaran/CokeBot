@@ -52,6 +52,22 @@ Cokebot AI combines a Flask web application, MySQL transaction data, determinist
 - Correct/incorrect feedback capture for query intents.
 - Glossary support for common financial terms.
 
+### Static frontend demo
+
+The files in `static/` can be hosted on Cloudflare Pages or another static host without
+running Flask, MySQL, or Gemini. On non-local hosts the frontend automatically uses a
+small, clearly labelled demo fixture dataset for the Command Center and common questions.
+The demo keeps the interactive experience enabled, including SQL inspection, calculation
+explanations, charts, CSV export, What-if scenarios, CFO brief downloads, root-cause
+investigation, and saved monitor feedback.
+
+For local development, `localhost` and `127.0.0.1` continue to use the live Flask API.
+Use `?demo=1` to force the static fixtures or `?demo=0` to force API mode on another host.
+
+When a user asks an unsupported custom question while the frontend is in demo mode,
+the UI explains that this is a demo of the official Cokebot and links to the full
+repository: https://github.com/SaumitraSaran/CokeBot
+
 ## Architecture
 
 ```text

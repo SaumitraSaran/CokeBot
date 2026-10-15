@@ -145,6 +145,16 @@ body {
   display: flex; align-items: center; gap: 7px;
   font-size: .78rem; color: var(--text-secondary);
 }
+.demo-badge {
+  border: 1px solid var(--border-accent);
+  border-radius: var(--r-pill);
+  padding: 3px 8px;
+  color: var(--accent);
+  background: var(--accent-glow);
+  font-size: .65rem;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
 
 /* ── Executive insight cards, charts and actions ────────────────── */
 .insight-layer { display: grid; gap: 10px; margin-top: 12px; }
@@ -302,6 +312,28 @@ body {
   border: 1px solid var(--border);
   border-bottom-left-radius: 4px;
   color: var(--text-primary);
+}
+
+.repository-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 10px;
+  padding: 9px 14px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-md);
+  color: #fff;
+  background: var(--accent);
+  font-size: .8rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all .2s var(--ease);
+}
+
+.repository-link-btn:hover {
+  background: var(--accent-hover);
+  box-shadow: 0 4px 18px rgba(238 52 42 / .28);
+  transform: translateY(-1px);
 }
 
 /* ── SQL toggle ──────────────────────────────────────────────────── */
