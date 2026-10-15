@@ -1,8 +1,12 @@
-# Cokebot AI
+<p align="center">
+  <img src="static/assets/Cokebot%20AI%20Logo.png" alt="Cokebot AI logo" />
+</p>
 
 > A finance-focused conversational analytics assistant for exploring customer transaction data with natural-language questions.
 
 Cokebot AI combines a Flask web application, MySQL transaction data, deterministic intent recognition, and Google Gemini-powered query generation. It is designed for finance and business users who need fast answers, transparent results, lightweight visualizations, and exportable insights without writing SQL.
+
+[**Try the live demo**](https://983e3bd9.cokebot.pages.dev/)
 
 ## Contents
 
