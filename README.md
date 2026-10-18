@@ -6,7 +6,7 @@
 
 Cokebot AI combines a Flask web application, MySQL transaction data, deterministic intent recognition, and Google Gemini-powered query generation. It is designed for finance and business users who need fast answers, transparent results, lightweight visualizations, and exportable insights without writing SQL.
 
-[**Try the live demo**](https://983e3bd9.cokebot.pages.dev/)
+[**Try the live demo**](https://cokebot.pages.dev/)
 
 ## Contents
 
